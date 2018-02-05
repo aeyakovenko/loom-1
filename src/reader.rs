@@ -6,7 +6,12 @@ use mio;
 use data;
 use net;
 
-type Messages = Arc<(Vec<data::Message>, Vec<(usize, SocketAddr)>, usize)>;
+struct MessageData {
+    msgs: Vec<data::Message>,
+    data: Vec<(usize, SocketAddr),
+}
+
+type Messages = Arc<MessageData>;
 
 struct Data {
     pending: VecDeque<Messages>,
@@ -24,16 +29,15 @@ impl Reader {
         return Reader{lock: Mutex::new(d), port: port};
     }
     pub fn next(&self) -> Result<Messages> {
-        let d = self.lock.lock().expect("lock");
+        let mut d = self.lock.lock().expect("lock");
         let o = d.pending.pop_front();
         return from_option(o);
     }
     pub fn recycle(&self, m: Messages) {
-        let d = self.lock.lock().expect("lock");
+        let mut d = self.lock.lock().expect("lock");
         d.gc.push(m);
     }
     pub fn run(&self) -> Result<()> {
-        let mut num = 0usize;
         let ipv4 = Ipv4Addr::new(0, 0, 0, 0);
         let addr = SocketAddr::new(IpAddr::V4(ipv4), self.port);
         const READABLE: mio::Token = mio::Token(0);
@@ -44,43 +48,38 @@ impl Reader {
         let mut events = mio::Events::with_capacity(8);
         
         loop {
-            self.poll.poll(&mut events, None)?;
+            poll.poll(&mut events, None)?;
             let mut m =  self.allocate();
-            m.2 = net::read_from(&srv, &mut m.0, &mut m.1);
+            let num = net::read_from(&srv, &mut m.msgs, &mut m.data)?;
+            let total = m.data.sum(|v| v.0);
+            m.msgs.resize(total);
+            m.data.resize(num);
             self.enqueue(m);
             self.notify();
         }
-        return Ok(());
     }
     fn notify(&self) {
         //TODO(anatoly), hard code other threads to notify
     }
     fn allocate(&self) -> Messages {
-        let s = self.lock.lock();
+        let mut s = self.lock.lock().expect("lock");
         return match s.gc.pop() {
                 Some(v) => {
                     v.2 = 0;
-                    v;
+                    v
                 },
                 _ => {
                     let mut m = Vec::new();
                     m.resize(1024, data::Message::default());
                     let mut d = Vec::new();
-                    d.resize(1024, Default::default());
-                    Arc::new((m, d, 0))
+                    let df = (0, "0.0.0.0:0000".parse().expect("parse"));
+                    d.resize(1024, df);
+                    Arc::new(MessageData{msgs:m, data:d})
                 }
         }
     }
     fn enqueue(&self, m: Messages) {
-        let s = self.lock.lock();
+        let mut s = self.lock.lock().expect("lock");
         s.pending.push_back(m);
-        return match s.gc.pop() {
-                Some(v) => v,
-                _ => {
-                    let mut v = Vec::new();
-                    v.resize(1024, data::Message::default());
-                    Arc::new(v)
-                }
-        }
     }
 }
