@@ -42,7 +42,7 @@ pub fn read_from(socket: &UdpSocket, messages: &mut [Message], mdata: &mut [(usi
         unsafe {
             let p = &mut messages[total] as *mut Message;
             if (max - total) * sz < MAX_PACKET {
-                return Ok(());
+                return Ok(ix);
             }
             let buf = transmute(from_raw_parts(p as *mut u8, MAX_PACKET));
             let (nrecv, from) = socket.recv_from(buf)?;

@@ -2,6 +2,7 @@
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use result::Result;
+use mio;
 use mio::net::UdpSocket;
 use std::mem::transmute;
 use std::mem::size_of;
