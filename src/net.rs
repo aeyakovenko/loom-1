@@ -33,23 +33,27 @@ pub fn client(uri: &str) -> Result<UdpSocket> {
     Ok(ret)
 }
 
-pub fn read_from(socket: &UdpSocket, messages: &mut [Message],
-                 num: &mut usize) -> Result<SocketAddr> {
+pub fn read_from(socket: &UdpSocket, messages: &mut [Message], mdata: &mut [(usize, SocketAddr)]) -> Result<usize> {
     let sz = size_of::<Message>();
     let max = messages.len();
-    let mut from = SocketAddr::default();
-    unsafe {
-        let p = &mut messages[*num] as *mut Message;
-        if (max - *num) * sz < MAX_PACKET {
-            return Ok(());
+    let mut total = 0usize;
+    let mut ix = 0usize;
+    while total < max {
+        unsafe {
+            let p = &mut messages[total] as *mut Message;
+            if (max - total) * sz < MAX_PACKET {
+                return Ok(());
+            }
+            let buf = transmute(from_raw_parts(p as *mut u8, MAX_PACKET));
+            let (nrecv, from) = socket.recv_from(buf)?;
+            total = total + nrecv / sz;
+            *mdata.get_unchecked_mut(ix) = (nrecv / sz, from);
         }
-        let buf = transmute(from_raw_parts(p as *mut u8, MAX_PACKET));
-        let (nrecv, addr) = socket.recv_from(buf)?;
-        *num = *num + nrecv / sz;
-        from = addr;
+        ix = ix + 1;
     }
-    Ok(from);
+    Ok(ix)
 }
+
 
 
 pub fn read(socket: &UdpSocket, messages: &mut [Message], num: &mut usize) -> Result<()> {

@@ -35,15 +35,14 @@ impl Ledger {
             for event in events.iter() {
                 match event.token() {
                     READABLE => {
-                        let from = net::read_from(&srv, &mut m, &mut num, &mut from)?;
+                        let from = net::read_from(&srv, &mut m, &mut num,
+                                                  &mut from)?;
                         self.execute(srv, from, &m[0 .. num]);
                     }
                     _ => (),
                 }
             }
         }
-
-
         return Ok(());
     }
     pub fn execute(&self,  sock: &UdpSocket, from: &SocketAddr, msgs: &[data::Message]) -> Result<()> {
@@ -76,7 +75,7 @@ impl Ledger {
         file.read(buf)?;
         return Ok(());
     }
-    fn get_ledger(&self, sock: &UdpSocket, get: &data::GetLedger) -> Result<()> {
+    fn get_ledger(&self, sock: &UdpSocket, from: &SocketAddr, get: &data::GetLedger) -> Result<()> {
         let mut mem = Vec::new();
         mem.resize(get.num as usize, data::Message::default());
         Self::load(&mut mem, get.start)?;
@@ -84,7 +83,7 @@ impl Ledger {
         let sz = size_of::<data::Message>();
         let bz = mem.len() * sz;
         let buf = unsafe { transmute(from_raw_parts(p as *const u8, bz)) };
-        sock.send(buf)?;
+        sock.send_to(buf, &from)?;
         return Ok(());
     }
     fn exec(&self, sock: &UdpSocket, from: &SocketAddr, m: &data::Message) -> Result<()> {
