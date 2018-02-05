@@ -1,9 +1,11 @@
 use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
-use std::net::SocketAddr;
+use std::net::{SocketAddr, Ipv4Addr, IpAddr};
 use mio;
+use data;
+use net;
 
-type Messages = Arc<(Vec<data::Message>, Vec<(usize, SocketAddr)>, usize)>
+type Messages = Arc<(Vec<data::Message>, Vec<(usize, SocketAddr)>, usize)>;
 
 struct Data {
     pending: VecDeque<Messages>,
@@ -12,22 +14,20 @@ struct Data {
 struct Reader {
     lock: Mutex<Data>,
     port: u16,
-    poll: mio::Poll,
-    sock: mio::net::UdpSocket,
 }
 impl Reader {
     pub fn new(port: u16) -> Result<Reader> {
         let d = Data { gc: Vec::new(),
                        pending: Vec::new() };
 
-        return Reader{lock: Mutex::new(d), poll: poll, sock: sock};
+        return Reader{lock: Mutex::new(d), port: port};
     }
     pub fn next(&self) -> Result<Messages> {
-        let d = self.lock.lock()
+        let d = self.lock.lock();
         d.pending.pop_front()
     }
     pub fn recycle(&self, m: Messages) -> Result<Messages> {
-        let d = self.lock.lock()
+        let d = self.lock.lock();
         d.gc.push(m)
     }
     pub fn run(&self) {
