@@ -36,6 +36,7 @@ pub fn from_option<T>(r: Option<T>) -> Result<T> {
         None => Err(Error::NoneError)
     }
 }
+
 impl core::convert::From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Error {
         Error::IO(e)

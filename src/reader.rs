@@ -6,18 +6,34 @@ use mio;
 use data;
 use net;
 
-struct MessageData {
+pub struct Messages {
     msgs: Vec<data::Message>,
-    data: Vec<(usize, SocketAddr),
+    data: Vec<(usize,SocketAddr)>,
+}
+impl Messages {
+    fn new() -> Messages {
+        let mut m = Vec::new();
+        m.resize(1024, data::Message::default());
+        let mut d = Vec::new();
+        d.resize(1024, Self::def_data());
+        Messages{msgs:m, data:d}
+    }
+    fn def_data() -> (usize, SocketAddr) {
+         let ipv4 = Ipv4Addr::new(0, 0, 0, 0);
+         let addr = SocketAddr::new(IpAddr::V4(ipv4), 0);
+         let df = (0, addr);
+         return df;
+     }
+
 }
 
-type Messages = Arc<MessageData>;
+pub type SharedMessages = Arc<Messages>;
 
 struct Data {
-    pending: VecDeque<Messages>,
-    gc: Vec<Messages>,
+    pending: VecDeque<SharedMessages>,
+    gc: Vec<SharedMessages>,
 }
-struct Reader {
+pub struct Reader {
     lock: Mutex<Data>,
     port: u16,
 }
@@ -28,12 +44,12 @@ impl Reader {
 
         return Reader{lock: Mutex::new(d), port: port};
     }
-    pub fn next(&self) -> Result<Messages> {
+    pub fn next(&self) -> Result<SharedMessages> {
         let mut d = self.lock.lock().expect("lock");
         let o = d.pending.pop_front();
         return from_option(o);
     }
-    pub fn recycle(&self, m: Messages) {
+    pub fn recycle(&self, m: SharedMessages) {
         let mut d = self.lock.lock().expect("lock");
         d.gc.push(m);
     }
@@ -50,35 +66,27 @@ impl Reader {
         loop {
             poll.poll(&mut events, None)?;
             let mut m =  self.allocate();
-            let num = net::read_from(&srv, &mut m.msgs, &mut m.data)?;
-            let total = m.data.sum(|v| v.0);
-            m.msgs.resize(total);
-            m.data.resize(num);
-            self.enqueue(m);
+            let c = Arc::clone(&m);
+            let v = from_option(Arc::get_mut(&mut m))?;
+            let num = net::read_from(&srv, &mut v.msgs, &mut v.data)?;
+            let total = v.data.iter_mut().map(|v| v.0).sum();
+            v.msgs.resize(total, data::Message::default());
+            v.data.resize(num, Messages::def_data());
+            self.enqueue(c);
             self.notify();
         }
     }
     fn notify(&self) {
         //TODO(anatoly), hard code other threads to notify
     }
-    fn allocate(&self) -> Messages {
+    fn allocate(&self) -> SharedMessages {
         let mut s = self.lock.lock().expect("lock");
         return match s.gc.pop() {
-                Some(v) => {
-                    v.2 = 0;
-                    v
-                },
-                _ => {
-                    let mut m = Vec::new();
-                    m.resize(1024, data::Message::default());
-                    let mut d = Vec::new();
-                    let df = (0, "0.0.0.0:0000".parse().expect("parse"));
-                    d.resize(1024, df);
-                    Arc::new(MessageData{msgs:m, data:d})
-                }
+                Some(v) => v,
+                _ => Arc::new(Messages::new())
         }
     }
-    fn enqueue(&self, m: Messages) {
+    fn enqueue(&self, m: SharedMessages) {
         let mut s = self.lock.lock().expect("lock");
         s.pending.push_back(m);
     }
